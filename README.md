@@ -177,21 +177,52 @@ curl http://localhost:8081/public
 
 ---
 
+Here's the **Manual Testing** section updated for **both Windows (PowerShell)** and **Linux/macOS (bash)** environments:
+
+---
+
 ## 🧪 Testing the System
 
-### Manual
+### 🖥️ Manual Testing
+
+#### 🔸 For **Linux/macOS (bash)**
 
 ```bash
-# Get JWT
-curl -X POST http://localhost:8081/login \
+# Get JWT for 'alice'
+TOKEN=$(curl -s -X POST http://localhost:8081/login \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=password&client_id=fiber-app&username=alice&password=password123"
+  -d "grant_type=password&client_id=fiber-app&username=alice&password=password123" | jq -r .access_token)
 
-# Then test endpoints with Authorization header
+# Call protected endpoints
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/profile
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/user
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8081/admin
 ```
+
+> 💡 You need `jq` installed for this script to extract the token.
+
+---
+
+#### 🔸 For **Windows (PowerShell)**
+
+```powershell
+# Get JWT for 'alice'
+$response = Invoke-RestMethod -Method Post `
+  -Uri http://localhost:8081/login `
+  -ContentType "application/x-www-form-urlencoded" `
+  -Body @{ grant_type='password'; client_id='fiber-app'; username='alice'; password='password123' }
+
+$token = $response.access_token
+
+# Call protected endpoints
+Invoke-RestMethod -Headers @{ Authorization = "Bearer $token" } -Uri http://localhost:8081/profile
+Invoke-RestMethod -Headers @{ Authorization = "Bearer $token" } -Uri http://localhost:8081/user
+Invoke-RestMethod -Headers @{ Authorization = "Bearer $token" } -Uri http://localhost:8081/admin
+```
+
+> ✅ Works with PowerShell 7+. If you're using Windows Terminal or VSCode terminal, you're ready to go.
+
+---
 
 ### Automated
 
