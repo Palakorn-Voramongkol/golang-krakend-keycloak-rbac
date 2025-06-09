@@ -224,13 +224,33 @@ Invoke-RestMethod -Headers @{ Authorization = "Bearer $token" } -Uri http://loca
 
 ---
 
-### Automated
+Here’s the updated section with an icon added to `### Automated` to match the styling of the rest:
 
-Run full script for Alice and Bob:
+---
+
+### ⚙️ Automated
+
+Run full test script for Alice and Bob:
+
+#### 🔸 Linux/macOS:
 
 ```bash
-./test-all.sh    # or .\test-all.ps1 on Windows
+./test-all.sh
 ```
+
+#### 🔸 Windows (PowerShell 7+):
+
+```powershell
+.\test-all.ps1
+```
+
+> 🧪 This script will:
+>
+> 1. Acquire tokens via `/login`
+> 2. Test `/public`, `/profile`, `/user`, and `/admin`
+> 3. Report ✅ success or ❌ failure per check
+
+Let me know if you want icons added elsewhere like ✅/❌ in test output!
 
 ---
 
