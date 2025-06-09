@@ -25,10 +25,6 @@ In this secure architecture, the **only** entry point for external traffic is th
 
 ---
 
-Here's the **adjusted and clarified version** of your RBAC section to avoid redundancy, cleanly present the **multi-permission example**, and align better with the rest of your documentation:
-
----
-
 ## 🔐 RBAC: Role-Based Access Control
 
 RBAC is enforced by the backend using JWT claims and role-permission mappings stored in **MongoDB**. Each role can contain multiple permissions, which define what the user can access based on **path**, **region**, and **country-level** rules.
