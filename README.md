@@ -250,8 +250,6 @@ Run full test script for Alice and Bob:
 > 2. Test `/public`, `/profile`, `/user`, and `/admin`
 > 3. Report ✅ success or ❌ failure per check
 
-Let me know if you want icons added elsewhere like ✅/❌ in test output!
-
 ---
 
 ## 🧠 Tips for Extending RBAC
