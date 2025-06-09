@@ -25,11 +25,15 @@ In this secure architecture, the **only** entry point for external traffic is th
 
 ---
 
+Here's the **adjusted and clarified version** of your RBAC section to avoid redundancy, cleanly present the **multi-permission example**, and align better with the rest of your documentation:
+
+---
+
 ## 🔐 RBAC: Role-Based Access Control
 
-RBAC is enforced by the backend using JWT claims and role-permission mappings stored in **MongoDB**.
+RBAC is enforced by the backend using JWT claims and role-permission mappings stored in **MongoDB**. Each role can contain multiple permissions, which define what the user can access based on **path**, **region**, and **country-level** rules.
 
-### Example Role Document (MongoDB: `roles` collection)
+### Example Role Document (`roles` collection in MongoDB)
 
 ```json
 {
@@ -39,29 +43,57 @@ RBAC is enforced by the backend using JWT claims and role-permission mappings st
       "path": "hr:payroll:view",
       "regions": ["SEA"],
       "except_countries": ["MM"]
+    },
+    {
+      "path": "hr:benefits:view",
+      "regions": ["SEA"],
+      "except_regions": ["VN"]
+    },
+    {
+      "path": "profile:info:read",
+      "countries": ["TH", "SG"]
     }
   ]
 }
 ```
 
-### Access Evaluation Rules
-
-* **Paths** are in the format: `domain:resource:action` (e.g. `hr:payroll:view`).
-* Wildcards `*` are supported (`admin:*:*`, `*:*:*`).
-* Permissions can include:
-
-  * `regions`: predefined region names (e.g., `SEA`, `GLOBAL`)
-  * `countries`: allowlist for specific countries
-  * `except_regions` / `except_countries`: to explicitly deny
-  * `except_paths`: path-based exclusions
-
-The backend:
-
-* Parses the JWT from KrakenD
-* Retrieves MongoDB role definitions for the user’s roles
-* Evaluates whether access is permitted based on path and country
+> 🔍 This example grants the `user` role:
+>
+> * Access to **payroll view** in Southeast Asia, except Myanmar.
+> * Access to **benefits view** in Southeast Asia, except Vietnam.
+> * Access to **profile info read** only for users from Thailand and Singapore.
 
 ---
+
+### 🧾 Access Evaluation Logic
+
+* **Paths** follow the format `domain:resource:action` (e.g., `hr:payroll:view`).
+* Wildcards `*` are supported in any segment:
+  e.g., `admin:*:*`, `*:payroll:view`, or `*:*:*`.
+* Each permission may include:
+
+  * `regions`: allowed region codes (`SEA`, `GLOBAL`, etc.)
+  * `countries`: specific allowed countries
+  * `except_regions` and `except_countries`: explicit deny lists
+  * `except_paths`: override to block certain paths even if matched
+
+---
+
+### 🧠 How It Works (Backend Logic)
+
+1. **JWT is passed from KrakenD** to the backend.
+2. Backend **parses the token** using `ParseUnverified` (no revalidation).
+3. Backend **fetches roles from MongoDB** for the current user.
+4. Backend checks:
+
+   * Is the requested `path` permitted for any role?
+   * Is the `country` allowed via `regions` or `countries`?
+   * Are there any exclusion rules (e.g., `except_paths`)?
+
+Only if all checks pass, the request is allowed.
+
+---
+
 
 ## 🚦 Request Flow
 
