@@ -23,6 +23,7 @@ In this secure architecture, the **only** entry point for external traffic is th
                       +-------------------+
 ```
 
+
 ---
 
 ## 🔐 RBAC: Role-Based Access Control
@@ -51,7 +52,7 @@ RBAC is enforced by the backend using JWT claims and role-permission mappings st
     }
   ]
 }
-```
+````
 
 > 🔍 This example grants the `user` role:
 >
@@ -77,19 +78,127 @@ RBAC is enforced by the backend using JWT claims and role-permission mappings st
 
 ### 🧠 How It Works (Backend Logic)
 
-1. **JWT is passed from KrakenD** to the backend.
-2. Backend **parses the token** using `ParseUnverified` (no revalidation).
-3. Backend **fetches roles from MongoDB** for the current user.
-4. Backend checks:
-
-   * Is the requested `path` permitted for any role?
-   * Is the `country` allowed via `regions` or `countries`?
-   * Are there any exclusion rules (e.g., `except_paths`)?
-
-Only if all checks pass, the request is allowed.
+1. **JWT arrives from KrakenD** in `Authorization: Bearer <token>`.  
+2. **`parseToken`** does an unverified parse (`ParseUnverified`) to pull out the claims.  
+3. **`extractUser`** looks up each role in MongoDB and builds:
+   - A `User.Roles` slice of `Role{Permissions: [...]}`  
+   - A deduplicated `User.AllowedCountries` list by expanding every `Permission.Regions` (via a static `regionMap`) and honoring any `GLOBAL` wildcard.  
+4. **`IsAllowed(user, Requirement)`** enforces:
+   1. **Country pre-check**: if `Requirement.Country` ∉ `user.AllowedCountries` → **deny**.  
+   2. **For each** `role.Permissions`:
+      - **❌ Exclusions**: if any `ExceptPaths` matches `Requirement.Path`, **deny** immediately.  
+      - **✅ Allow**: if `matchPath(perm.Path, Requirement.Path)` **and** `isCountryPermitted(Requirement.Country, perm)` (which itself checks included/excluded countries & regions), **allow**.  
+   3. If no permission grants access, **deny**.  
+5. If allowed, request proceeds; otherwise you get a `403 Forbidden`.
 
 ---
 
+## 🔄 What Happens When a JWT Request Comes In?
+
+This section details the **internal logic** of the Go backend whenever it receives a request with a JWT token.
+
+### ✅ 1. **Client sends request with JWT**
+
+The request includes an `Authorization` header:
+
+```
+Authorization: Bearer <JWT>
+```
+
+Example endpoint:
+
+```
+GET /user/payroll/view
+```
+
+---
+
+### 🧰 2. **Middleware `requirePermission(...)` is triggered**
+
+This middleware wraps the protected route and is configured with:
+
+```go
+Requirement{
+  Path: "hr:payroll:view",
+  Country: "TH",
+}
+```
+
+It performs token parsing, user-role lookup, and access permission checks.
+
+---
+
+### 🔓 3. **JWT is parsed (no revalidation)**
+
+Function used: `parseToken(c *fiber.Ctx)`
+
+* Extracts the claims (such as `preferred_username`, `roles`, `sub`)
+* JWT signature is not revalidated (already trusted by KrakenD)
+
+Example claims:
+
+```json
+{
+  "preferred_username": "alice",
+  "roles": ["user"],
+  "sub": "abc123"
+}
+```
+
+---
+
+### 👤 4. **Roles are resolved from MongoDB**
+
+Function used: `extractUser(claims)`
+
+* The backend uses the `roles` array to query MongoDB (`roles` collection)
+* Each role contains permission rules based on paths, regions, countries, and exclusions
+* The allowed countries are computed based on `regions` like `SEA` or `GLOBAL`
+
+---
+
+### 🔐 5. **Access is evaluated against path + region/country rules**
+
+Function used: `IsAllowed(user, req)`
+
+It checks:
+
+* ✅ If the requested path matches any permission
+* ✅ If the region/country is allowed (directly or via region mapping)
+* ❌ If any exclusion overrides deny the request
+
+---
+
+### 🛑 6. **Decision is made**
+
+* ✅ If allowed → proceeds to route handler
+* ❌ If not allowed → returns 403 Forbidden with explanation
+
+---
+
+### ✅ Example Success Response
+
+```json
+{
+  "message": "Authorized to view payroll in Thailand"
+}
+```
+
+---
+
+### ❌ Example Denied Response
+
+```json
+{
+  "error": "Access denied for: hr:payroll:view"
+}
+```
+
+---
+
+> ℹ️ This layered RBAC model ensures **dynamic, MongoDB-driven, fine-grained access control** for each endpoint based on JWT identity and geography.
+
+---
 
 ## 🚦 Request Flow
 
@@ -173,10 +282,6 @@ curl http://localhost:8081/public
 
 ---
 
-Here's the **Manual Testing** section updated for **both Windows (PowerShell)** and **Linux/macOS (bash)** environments:
-
----
-
 ## 🧪 Testing the System
 
 ### 🖥️ Manual Testing
@@ -220,11 +325,7 @@ Invoke-RestMethod -Headers @{ Authorization = "Bearer $token" } -Uri http://loca
 
 ---
 
-Here’s the updated section with an icon added to `### Automated` to match the styling of the rest:
-
----
-
-### ⚙️ Automated
+## ⚙️ Automated
 
 Run full test script for Alice and Bob:
 
@@ -264,6 +365,3 @@ Run full test script for Alice and Bob:
 * Add endpoints to `main.go` with `requirePermission(...)` middleware.
 
 * Use `curl localhost:8081/__debug/` if enabled for live inspection.
-
----
-
