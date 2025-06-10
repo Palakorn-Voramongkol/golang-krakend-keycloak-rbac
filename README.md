@@ -24,7 +24,7 @@ In this secure architecture, the **only** entry point for external traffic is th
 ```
 
 ---
-## 🚦 Request Flow
+## 🚦 Request Flow (End-to-End)
 
 ```mermaid
 sequenceDiagram
