@@ -1,5 +1,3 @@
-Here is the content, rearranged for improved clarity and readability.
-
 # Secure Go RBAC Backend API with KrakenD and Keycloak
 
 This project demonstrates a complete, production-ready setup for securing a Backend API using **KrakenD** as an API Gateway and **Keycloak** for identity and access management. It also implements **fine-grained Role-Based Access Control (RBAC)** backed by MongoDB.
