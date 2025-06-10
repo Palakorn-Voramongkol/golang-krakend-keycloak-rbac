@@ -11,15 +11,15 @@ All traffic—including token requests—is routed through KrakenD. The gateway 
 In this secure architecture, the **only** entry point for external traffic is the KrakenD Gateway. All internal services are isolated inside the Docker network.
 
 ```
-+--------+           +-------------------+     +-----------------+
-| Client |----------->|                   |----->| Keycloak        |
++--------+           +-------------------+      +-----------------+
+| Client |---------->|                   |----->| Keycloak        |
 |        |           |  KrakenD Gateway  |<-----| (for /login &   |
-|        |           |  (Port :8081)     |     |  JWKS)          |
-|        |<----------|                   |
-+--------+           |  - JWT Validation |     +-----------------+
+|        |           |  (Port :8081)     |      |  JWKS)          |
+|        |<----------|                   |      +-----------------+
++--------+           |  - JWT Validation |      +-----------------+
                      |  - Routing        |----->|  Backend API    |
                      |  - Proxy /login   |<-----|  (Port :3000)   |
-                     |                   |     +-----------------+
+                     |                   |      +-----------------+
                      +-------------------+
 ```
 
