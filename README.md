@@ -23,6 +23,28 @@ In this secure architecture, the **only** entry point for external traffic is th
                       +-------------------+
 ```
 
+---
+## 🚦 Request Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant KrakenD Gateway
+    participant Keycloak
+    participant Backend API
+
+    Note over Client, Keycloak: Step 1: Client gets a token via the Gateway
+    Client->>+KrakenD Gateway: POST /login (user & pass)
+    KrakenD Gateway->>+Keycloak: POST /realms/.../token
+    Keycloak-->>-KrakenD Gateway: JWT
+    KrakenD Gateway-->>-Client: JWT
+
+    Note over Client, Backend API: Step 2: Client accesses protected API
+    Client->>+KrakenD Gateway: GET /admin (Bearer JWT)
+    KrakenD Gateway->>+Backend API: GET /admin (Authorized)
+    Backend API-->>-KrakenD Gateway: 200 OK
+    KrakenD Gateway-->>-Client: 200 OK
+```
 
 ---
 
@@ -197,30 +219,6 @@ It checks:
 ---
 
 > ℹ️ This layered RBAC model ensures **dynamic, MongoDB-driven, fine-grained access control** for each endpoint based on JWT identity and geography.
-
----
-
-## 🚦 Request Flow
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant KrakenD Gateway
-    participant Keycloak
-    participant Backend API
-
-    Note over Client, Keycloak: Step 1: Client gets a token via the Gateway
-    Client->>+KrakenD Gateway: POST /login (user & pass)
-    KrakenD Gateway->>+Keycloak: POST /realms/.../token
-    Keycloak-->>-KrakenD Gateway: JWT
-    KrakenD Gateway-->>-Client: JWT
-
-    Note over Client, Backend API: Step 2: Client accesses protected API
-    Client->>+KrakenD Gateway: GET /admin (Bearer JWT)
-    KrakenD Gateway->>+Backend API: GET /admin (Authorized)
-    Backend API-->>-KrakenD Gateway: 200 OK
-    KrakenD Gateway-->>-Client: 200 OK
-```
 
 ---
 
