@@ -210,15 +210,15 @@ It checks:
 
 ```mermaid
 flowchart TD
-    A([Start]) --> B["JWT arrives from KrakenD\nAuthorization: Bearer <token>"]
+    A([Start]) --> B["JWT arrives from KrakenD<br/>Authorization: Bearer <token>"]
     B --> C["parseToken (unverified)"]
-    C --> D["extractUser:\n• fetch roles from MongoDB\n• build User.Roles & AllowedCountries"]
-    D --> E{"Requirement.Country ∈ AllowedCountries?"}
+    C --> D["extractUser:<br/>• fetch roles from MongoDB<br/>• build User.Roles & AllowedCountries"]
+    D --> E{Requirement.Country ∈ AllowedCountries?}
     E -- No --> F([403 Forbidden])
     E -- Yes --> G["Loop over each role.Permission"]
-    G --> H{"Any ExceptPaths\nmatch Requirement.Path?"}
+    G --> H{Any ExceptPaths<br/>match Requirement.Path?}
     H -- Yes --> F
-    H -- No --> I{"matchPath &\nisCountryPermitted?"}
+    H -- No --> I{matchPath &<br/>isCountryPermitted?}
     I -- Yes --> J([Proceed to handler])
     I -- No --> G
     J --> K([End])
