@@ -98,22 +98,6 @@ RBAC is enforced by the backend using JWT claims and role-permission mappings st
 
 ---
 
-### 🧠 How It Works (Backend Logic)
-
-1. **JWT arrives from KrakenD** in `Authorization: Bearer <token>`.  
-2. **`parseToken`** does an unverified parse (`ParseUnverified`) to pull out the claims.  
-3. **`extractUser`** looks up each role in MongoDB and builds:
-   - A `User.Roles` slice of `Role{Permissions: [...]}`  
-   - A deduplicated `User.AllowedCountries` list by expanding every `Permission.Regions` (via a static `regionMap`) and honoring any `GLOBAL` wildcard.  
-4. **`IsAllowed(user, Requirement)`** enforces:
-   1. **Country pre-check**: if `Requirement.Country` ∉ `user.AllowedCountries` → **deny**.  
-   2. **For each** `role.Permissions`:
-      - **❌ Exclusions**: if any `ExceptPaths` matches `Requirement.Path`, **deny** immediately.  
-      - **✅ Allow**: if `matchPath(perm.Path, Requirement.Path)` **and** `isCountryPermitted(Requirement.Country, perm)` (which itself checks included/excluded countries & regions), **allow**.  
-   3. If no permission grants access, **deny**.  
-5. If allowed, request proceeds; otherwise you get a `403 Forbidden`.
-
----
 
 ## 🔄 What Happens When a JWT Request Comes In?
 
@@ -219,6 +203,42 @@ It checks:
 ---
 
 > ℹ️ This layered RBAC model ensures **dynamic, MongoDB-driven, fine-grained access control** for each endpoint based on JWT identity and geography.
+
+---
+
+### 🧠 How It Works (Backend Logic detail)
+
+```mermaid
+flowchart TD
+    A([Start]) --> B["JWT arrives from KrakenD\nAuthorization: Bearer <token>"]
+    B --> C["parseToken (unverified)"]
+    C --> D["extractUser:\n• fetch roles from MongoDB\n• build User.Roles & AllowedCountries"]
+    D --> E{"Requirement.Country ∈ AllowedCountries?"}
+    E -- No --> F([403 Forbidden])
+    E -- Yes --> G["Loop over each role.Permission"]
+    G --> H{"Any ExceptPaths\nmatch Requirement.Path?"}
+    H -- Yes --> F
+    H -- No --> I{"matchPath &\nisCountryPermitted?"}
+    I -- Yes --> J([Proceed to handler])
+    I -- No --> G
+    J --> K([End])
+    F --> K
+
+```
+
+
+1. **JWT arrives from KrakenD** in `Authorization: Bearer <token>`.  
+2. **`parseToken`** does an unverified parse (`ParseUnverified`) to pull out the claims.  
+3. **`extractUser`** looks up each role in MongoDB and builds:
+   - A `User.Roles` slice of `Role{Permissions: [...]}`  
+   - A deduplicated `User.AllowedCountries` list by expanding every `Permission.Regions` (via a static `regionMap`) and honoring any `GLOBAL` wildcard.  
+4. **`IsAllowed(user, Requirement)`** enforces:
+   1. **Country pre-check**: if `Requirement.Country` ∉ `user.AllowedCountries` → **deny**.  
+   2. **For each** `role.Permissions`:
+      - **❌ Exclusions**: if any `ExceptPaths` matches `Requirement.Path`, **deny** immediately.  
+      - **✅ Allow**: if `matchPath(perm.Path, Requirement.Path)` **and** `isCountryPermitted(Requirement.Country, perm)` (which itself checks included/excluded countries & regions), **allow**.  
+   3. If no permission grants access, **deny**.  
+5. If allowed, request proceeds; otherwise you get a `403 Forbidden`.
 
 ---
 
