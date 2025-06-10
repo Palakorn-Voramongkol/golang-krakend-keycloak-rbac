@@ -1,3 +1,9 @@
+// main.go
+//
+// Secure Fiber-based Go API using JWT authentication with Role-Based Access Control (RBAC).
+// Integrates MongoDB to load role-permission mappings, with validation middleware to enforce
+// access rules per user, role, and region/country-level restrictions.
+
 package main
 
 import (
@@ -24,23 +30,24 @@ var (
 // JWT Parsing
 // ------------------------------------
 
+/*
+parseToken extracts the JWT token from the Authorization header,
+validates its structure, and returns the parsed claims without verification.
+*/
 func parseToken(c *fiber.Ctx) (jwt.MapClaims, error) {
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
 		return nil, fmt.Errorf("missing Authorization header")
 	}
-
 	parts := strings.Split(authHeader, " ")
 	if len(parts) != 2 || parts[0] != "Bearer" {
 		return nil, fmt.Errorf("invalid Authorization header format")
 	}
 	tokenString := parts[1]
-
 	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse token: %v", err)
 	}
-
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
 		return nil, fmt.Errorf("invalid token claims")
@@ -52,11 +59,13 @@ func parseToken(c *fiber.Ctx) (jwt.MapClaims, error) {
 // RBAC Types
 // ------------------------------------
 
+// Requirement defines a required path and country for permission checks.
 type Requirement struct {
 	Path    string
 	Country string
 }
 
+// Permission represents RBAC rules stored in MongoDB for each role.
 type Permission struct {
 	Path            string   `bson:"path"`
 	Regions         []string `bson:"regions"`
@@ -66,11 +75,13 @@ type Permission struct {
 	ExceptPaths     []string `bson:"except_paths"`
 }
 
+// Role represents a user role with a set of associated permissions.
 type Role struct {
 	RoleID      string       `bson:"role_id"`
 	Permissions []Permission `bson:"permissions"`
 }
 
+// User represents a compiled user object with allowed countries and roles.
 type User struct {
 	ID               string
 	AllowedCountries []string
@@ -81,6 +92,10 @@ type User struct {
 // RBAC Implementation
 // ------------------------------------
 
+/*
+matchPath compares a permission path pattern against a target path
+using wildcard-aware comparison.
+*/
 func matchPath(pattern, target string) bool {
 	p := strings.Split(pattern, ":")
 	t := strings.Split(target, ":")
@@ -95,6 +110,9 @@ func matchPath(pattern, target string) bool {
 	return true
 }
 
+/*
+contains checks if a value exists in a list, supporting wildcards (*).
+*/
 func contains(list []string, target string) bool {
 	for _, v := range list {
 		if strings.EqualFold(v, target) || v == "*" {
@@ -104,6 +122,9 @@ func contains(list []string, target string) bool {
 	return false
 }
 
+/*
+regionMap returns a static mapping of region codes to country lists.
+*/
 func regionMap() map[string][]string {
 	return map[string][]string{
 		"SEA":    {"TH", "SG", "MY", "PH", "VN", "MM"},
@@ -111,6 +132,10 @@ func regionMap() map[string][]string {
 	}
 }
 
+/*
+isCountryPermitted evaluates if a country is permitted under a given permission,
+considering included and excluded countries/regions.
+*/
 func isCountryPermitted(country string, perm Permission) bool {
 	if contains(perm.ExceptCountries, country) {
 		return false
@@ -138,11 +163,14 @@ func isCountryPermitted(country string, perm Permission) bool {
 	return false
 }
 
+/*
+IsAllowed checks whether a user has permission to access a specific path
+and country, based on their roles and MongoDB permissions.
+*/
 func IsAllowed(user *User, req Requirement) bool {
 	if !contains(user.AllowedCountries, req.Country) {
 		return false
 	}
-
 	for _, role := range user.Roles {
 		for _, perm := range role.Permissions {
 			for _, exPath := range perm.ExceptPaths {
@@ -162,6 +190,10 @@ func IsAllowed(user *User, req Requirement) bool {
 // JWT to User + Role Mapping
 // ------------------------------------
 
+/*
+extractUser parses JWT claims to extract the user identity and associated roles,
+then looks up role definitions from MongoDB and computes allowed countries.
+*/
 func extractUser(claims jwt.MapClaims) (*User, error) {
 	username := claims["preferred_username"].(string)
 	rolesIface, ok := claims["roles"].([]interface{})
@@ -219,6 +251,10 @@ func extractUser(claims jwt.MapClaims) (*User, error) {
 // Middleware
 // ------------------------------------
 
+/*
+requirePermission returns a Fiber middleware function that validates
+JWT claims and RBAC permissions before allowing access to a protected endpoint.
+*/
 func requirePermission(req Requirement) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		claims, err := parseToken(c)
@@ -243,6 +279,9 @@ func requirePermission(req Requirement) fiber.Handler {
 // Mongo Setup
 // ------------------------------------
 
+/*
+initMongo initializes and connects the MongoDB client using environment variables.
+*/
 func initMongo() {
 	mongoURI := os.Getenv("MONGO_URI")
 	if mongoURI == "" {
@@ -272,15 +311,20 @@ func initMongo() {
 // Main App
 // ------------------------------------
 
+/*
+main initializes the MongoDB client, sets up Fiber HTTP routes, and starts the server.
+*/
 func main() {
 	initMongo()
 
 	app := fiber.New()
 
+	// Public endpoint
 	app.Get("/public", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "This is a public endpoint."})
 	})
 
+	// Profile endpoint (JWT required, no RBAC)
 	app.Get("/profile", func(c *fiber.Ctx) error {
 		claims, err := parseToken(c)
 		if err != nil {
@@ -293,6 +337,7 @@ func main() {
 		})
 	})
 
+	// User-protected payroll endpoint
 	app.Get("/user/payroll/view", requirePermission(Requirement{
 		Path:    "hr:payroll:view",
 		Country: "TH",
@@ -300,6 +345,7 @@ func main() {
 		return c.JSON(fiber.Map{"message": "Authorized to view payroll in Thailand"})
 	})
 
+	// Admin-protected item listing endpoint
 	app.Get("/admin/items", requirePermission(Requirement{
 		Path:    "admin:items:view",
 		Country: "GLOBAL",
@@ -309,14 +355,12 @@ func main() {
 				"error": "MongoDB not initialized",
 			})
 		}
-
 		collection := mongoDB.Collection("items")
 		if collection == nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": "MongoDB collection 'items' not found",
 			})
 		}
-
 		count, err := collection.CountDocuments(context.Background(), struct{}{})
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -324,7 +368,6 @@ func main() {
 				"detail": err.Error(),
 			})
 		}
-
 		return c.JSON(fiber.Map{
 			"message":     "Admin access to item count",
 			"itemCountDB": count,
