@@ -125,9 +125,46 @@ func contains(list []string, target string) bool {
 /*
 regionMap returns a static mapping of region codes to country lists.
 */
+// regionMap returns a static mapping of region codes to lists of ISO-2 country codes.
+// Used by isCountryPermitted to expand “regions” into actual countries.
 func regionMap() map[string][]string {
 	return map[string][]string{
-		"SEA":    {"TH", "SG", "MY", "PH", "VN", "MM"},
+		// Africa (all African countries)
+		"AFRICA": {
+			"DZ", "AO", "BJ", "BW", "BF", "BI", "CV", "CM", "CF", "TD", "KM", "CG", "CD", "CI",
+			"DJ", "EG", "GQ", "ER", "SZ", "ET", "GA", "GM", "GH", "GN", "GW", "KE", "LS", "LR",
+			"LY", "MG", "MW", "ML", "MR", "MU", "MA", "MZ", "NA", "NE", "NG", "RW", "ST", "SN",
+			"SC", "SL", "SO", "ZA", "SS", "SD", "TZ", "TG", "TN", "UG", "EH", "ZM", "ZW",
+		},
+		// Asia (all Asian countries, including Middle East)
+		"ASIA": {
+			"AF", "AM", "AZ", "BH", "BD", "BT", "BN", "KH", "CN", "CY", "GE", "IN", "ID", "IR",
+			"IQ", "IL", "JP", "JO", "KZ", "KW", "KG", "LA", "LB", "MY", "MV", "MN", "MM", "NP",
+			"KP", "OM", "PK", "PS", "PH", "QA", "RU", "SA", "SG", "KR", "LK", "SY", "TW", "TJ",
+			"TH", "TL", "TR", "TM", "AE", "UZ", "VN", "YE",
+		},
+		// Europe
+		"EUROPE": {
+			"AL", "AD", "AT", "BY", "BE", "BA", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR",
+			"DE", "GR", "HU", "IS", "IE", "IT", "LV", "LI", "LT", "LU", "MT", "MD", "MC", "ME",
+			"NL", "MK", "NO", "PL", "PT", "RO", "SM", "RS", "SK", "SI", "ES", "SE", "CH", "UA", "UK", "VA",
+		},
+		// North America
+		"NORTH_AMERICA": {
+			"AG", "BS", "BB", "BZ", "CA", "CR", "CU", "DM", "DO", "SV", "GD", "GT", "HT", "HN",
+			"JM", "MX", "NI", "PA", "KN", "LC", "VC", "TT", "US",
+		},
+		// South America
+		"SOUTH_AMERICA": {
+			"AR", "BO", "BR", "CL", "CO", "EC", "GY", "PY", "PE", "SR", "UY", "VE",
+		},
+		// Oceania
+		"OCEANIA": {
+			"AU", "FJ", "KI", "MH", "FM", "NR", "NZ", "PW", "PG", "WS", "SB", "TO", "TV", "VU",
+		},
+		// Antarctica
+		"ANTARCTICA": {"AQ"},
+		// Global wildcard
 		"GLOBAL": {"*"},
 	}
 }
