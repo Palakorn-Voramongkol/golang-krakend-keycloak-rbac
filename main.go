@@ -31,8 +31,9 @@ var (
 // ------------------------------------
 
 /*
-parseToken extracts the JWT token from the Authorization header,
-validates its structure, and returns the parsed claims without verification.
+parseToken extracts the JWT token from the Authorization header
+and parses its claims without verifying the signature. This is safe because
+the signature has already been verified by the KrakenD API Gateway.
 */
 func parseToken(c *fiber.Ctx) (jwt.MapClaims, error) {
 	authHeader := c.Get("Authorization")
@@ -59,13 +60,13 @@ func parseToken(c *fiber.Ctx) (jwt.MapClaims, error) {
 // RBAC Types
 // ------------------------------------
 
-// Requirement defines a required path and country for permission checks.
+// Requirement defines a required permission path and country for an endpoint.
 type Requirement struct {
 	Path    string
 	Country string
 }
 
-// Permission represents RBAC rules stored in MongoDB for each role.
+// Permission represents a single RBAC rule stored in MongoDB for a role.
 type Permission struct {
 	Path            string   `bson:"path"`
 	Regions         []string `bson:"regions"`
@@ -75,13 +76,14 @@ type Permission struct {
 	ExceptPaths     []string `bson:"except_paths"`
 }
 
-// Role represents a user role with a set of associated permissions.
+// Role represents a user role containing a list of permissions.
 type Role struct {
 	RoleID      string       `bson:"role_id"`
 	Permissions []Permission `bson:"permissions"`
 }
 
-// User represents a compiled user object with allowed countries and roles.
+// User is a temporary struct representing the authenticated user,
+// compiled with their roles and all countries they are permitted to access.
 type User struct {
 	ID               string
 	AllowedCountries []string
@@ -93,8 +95,8 @@ type User struct {
 // ------------------------------------
 
 /*
-matchPath compares a permission path pattern against a target path
-using wildcard-aware comparison.
+matchPath compares a permission path pattern (e.g., "hr:profile:*")
+against a target request path (e.g., "hr:profile:view") using wildcard matching.
 */
 func matchPath(pattern, target string) bool {
 	p := strings.Split(pattern, ":")
@@ -111,7 +113,8 @@ func matchPath(pattern, target string) bool {
 }
 
 /*
-contains checks if a value exists in a list, supporting wildcards (*).
+contains checks if a target string exists in a list of strings,
+with case-insensitivity and support for the wildcard character '*'.
 */
 func contains(list []string, target string) bool {
 	for _, v := range list {
@@ -123,10 +126,9 @@ func contains(list []string, target string) bool {
 }
 
 /*
-regionMap returns a static mapping of region codes to country lists.
+regionMap returns a static mapping of region codes (e.g., "ASIA")
+to their corresponding lists of ISO-2 country codes.
 */
-// regionMap returns a static mapping of region codes to lists of ISO-2 country codes.
-// Used by isCountryPermitted to expand “regions” into actual countries.
 func regionMap() map[string][]string {
 	return map[string][]string{
 		// Africa (all African countries)
@@ -164,14 +166,14 @@ func regionMap() map[string][]string {
 		},
 		// Antarctica
 		"ANTARCTICA": {"AQ"},
-		// Global wildcard
+		// Global wildcard for all countries
 		"GLOBAL": {"*"},
 	}
 }
 
 /*
-isCountryPermitted evaluates if a country is permitted under a given permission,
-considering included and excluded countries/regions.
+isCountryPermitted evaluates if a specific country is allowed by a permission rule,
+taking into account included/excluded countries and regions.
 */
 func isCountryPermitted(country string, perm Permission) bool {
 	if contains(perm.ExceptCountries, country) {
@@ -188,7 +190,7 @@ func isCountryPermitted(country string, perm Permission) bool {
 		return true
 	}
 	for _, region := range perm.Regions {
-		if region == "*" {
+		if region == "*" || region == "GLOBAL" {
 			return true
 		}
 		if countries, ok := regionMap()[region]; ok {
@@ -201,20 +203,25 @@ func isCountryPermitted(country string, perm Permission) bool {
 }
 
 /*
-IsAllowed checks whether a user has permission to access a specific path
-and country, based on their roles and MongoDB permissions.
+IsAllowed is the core RBAC logic function. It checks if a user has permission
+to access a resource based on their roles and the endpoint's requirements.
 */
 func IsAllowed(user *User, req Requirement) bool {
-	if !contains(user.AllowedCountries, req.Country) {
+	// First, check if the required country is in the user's pre-calculated list of allowed countries.
+	if !contains(user.AllowedCountries, req.Country) && req.Country != "GLOBAL" {
 		return false
 	}
+
+	// Then, check if any of the user's roles grant permission for the required path and country.
 	for _, role := range user.Roles {
 		for _, perm := range role.Permissions {
+			// Check for explicit path exclusions first.
 			for _, exPath := range perm.ExceptPaths {
 				if matchPath(exPath, req.Path) {
-					return false
+					return false // Deny if path is explicitly excluded.
 				}
 			}
+			// Grant access if the path and country are permitted by the rule.
 			if matchPath(perm.Path, req.Path) && isCountryPermitted(req.Country, perm) {
 				return true
 			}
@@ -228,14 +235,17 @@ func IsAllowed(user *User, req Requirement) bool {
 // ------------------------------------
 
 /*
-extractUser parses JWT claims to extract the user identity and associated roles,
-then looks up role definitions from MongoDB and computes allowed countries.
+extractUser parses JWT claims, retrieves the associated roles from MongoDB,
+and builds a User object with all permissions and a computed list of allowed countries.
 */
 func extractUser(claims jwt.MapClaims) (*User, error) {
-	username := claims["preferred_username"].(string)
+	username, ok := claims["preferred_username"].(string)
+	if !ok {
+		return nil, fmt.Errorf("preferred_username missing or not a string in token")
+	}
 	rolesIface, ok := claims["roles"].([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("roles missing in token")
+		return nil, fmt.Errorf("roles claim missing or in wrong format")
 	}
 
 	var roleIDs []string
@@ -256,17 +266,24 @@ func extractUser(claims jwt.MapClaims) (*User, error) {
 		var role Role
 		err := rolesCollection.FindOne(ctx, bson.M{"role_id": roleID}).Decode(&role)
 		if err != nil {
-			return nil, fmt.Errorf("role not found in database: %s", roleID)
+			// Log the actual error for debugging but return a generic message to the client.
+			log.Printf("Failed to find role '%s' in database: %v", roleID, err)
+			return nil, fmt.Errorf("permission check failed: could not resolve user roles")
 		}
+
+		// Calculate the set of all countries this user is allowed to access.
 		for _, perm := range role.Permissions {
 			for _, r := range perm.Regions {
-				if r == "GLOBAL" {
+				if r == "GLOBAL" || r == "*" {
 					countrySet["*"] = struct{}{}
-				} else {
-					for _, c := range regionMap()[r] {
+				} else if countries, ok := regionMap()[r]; ok {
+					for _, c := range countries {
 						countrySet[c] = struct{}{}
 					}
 				}
+			}
+			for _, c := range perm.Countries {
+				countrySet[c] = struct{}{}
 			}
 		}
 		roles = append(roles, role)
@@ -289,8 +306,8 @@ func extractUser(claims jwt.MapClaims) (*User, error) {
 // ------------------------------------
 
 /*
-requirePermission returns a Fiber middleware function that validates
-JWT claims and RBAC permissions before allowing access to a protected endpoint.
+requirePermission returns a Fiber middleware. It parses the JWT, builds the user's
+permission profile from MongoDB, and denies access if the required permissions are not met.
 */
 func requirePermission(req Requirement) fiber.Handler {
 	return func(c *fiber.Ctx) error {
@@ -304,9 +321,10 @@ func requirePermission(req Requirement) fiber.Handler {
 		}
 		if !IsAllowed(user, req) {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "Access denied for: " + req.Path,
+				"error": "Access denied. You do not have permission for this resource.",
 			})
 		}
+		// Store the resolved user object in the context for handlers to use.
 		c.Locals("user", user)
 		return c.Next()
 	}
@@ -317,7 +335,8 @@ func requirePermission(req Requirement) fiber.Handler {
 // ------------------------------------
 
 /*
-initMongo initializes and connects the MongoDB client using environment variables.
+initMongo initializes the connection to the MongoDB database using an
+environment variable for the URI and a default fallback.
 */
 func initMongo() {
 	mongoURI := os.Getenv("MONGO_URI")
@@ -349,37 +368,38 @@ func initMongo() {
 // ------------------------------------
 
 /*
-main initializes the MongoDB client, sets up Fiber HTTP routes, and starts the server.
+main is the entry point of the application. It initializes the database connection,
+sets up the Fiber HTTP routes and middleware, and starts the server.
 */
 func main() {
 	initMongo()
 
 	app := fiber.New()
 
-	// Public endpoint
+	// Public endpoint, does not require authentication or permissions.
 	app.Get("/public", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"message": "This is a public endpoint."})
 	})
 
-	// Profile endpoint (JWT required, no RBAC)
+	// Profile endpoint, protected by RBAC middleware.
 	app.Get("/user/profile", requirePermission(Requirement{
-		Path:    "hr:profile:view", // Let's assume a new, more generic permission
+		Path:    "hr:profile:view",
 		Country: "GLOBAL",
 	}), func(c *fiber.Ctx) error {
-		claims, err := parseToken(c)
-		if err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
-		}
+		// Retrieve the user object already processed by the middleware.
+		user := c.Locals("user").(*User)
+
+		// Construct the response with detailed user info.
 		return c.JSON(fiber.Map{
-			"user":    claims["preferred_username"],
-			"roles":   claims["roles"],
-			"subject": claims["sub"],
+			"user":              user.ID,
+			"roles":             user.Roles, // This will be the full role object from Mongo.
+			"allowed_countries": user.AllowedCountries,
 		})
 	})
 
-	// User endpoint (JWT required, no RBAC)
+	// User data endpoint, protected by RBAC middleware.
 	app.Get("/user", requirePermission(Requirement{
-		Path:    "hr:user:view", // Let's assume a new, more generic permission
+		Path:    "hr:user:view",
 		Country: "GLOBAL",
 	}), func(c *fiber.Ctx) error {
 		// The 'requirePermission' middleware already parsed the user and stored it.
@@ -393,7 +413,7 @@ func main() {
 		})
 	})
 
-	// User-protected payroll endpoint
+	// Payroll endpoint with country-specific permission requirement.
 	app.Get("/user/payroll", requirePermission(Requirement{
 		Path:    "hr:payroll:view",
 		Country: "TH",
@@ -401,7 +421,7 @@ func main() {
 		return c.JSON(fiber.Map{"message": "Authorized to view payroll in Thailand"})
 	})
 
-	// Admin-protected item listing endpoint
+	// Admin-only endpoint for viewing item data.
 	app.Get("/admin/items", requirePermission(Requirement{
 		Path:    "admin:items:view",
 		Country: "GLOBAL",
