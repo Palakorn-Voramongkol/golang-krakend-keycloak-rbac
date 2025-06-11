@@ -362,7 +362,10 @@ func main() {
 	})
 
 	// Profile endpoint (JWT required, no RBAC)
-	app.Get("/profile", func(c *fiber.Ctx) error {
+	app.Get("/user/profile", requirePermission(Requirement{
+		Path:    "hr:profile:view", // Let's assume a new, more generic permission
+		Country: "GLOBAL",
+	}), func(c *fiber.Ctx) error {
 		claims, err := parseToken(c)
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
@@ -374,8 +377,24 @@ func main() {
 		})
 	})
 
+	// User endpoint (JWT required, no RBAC)
+	app.Get("/user", requirePermission(Requirement{
+		Path:    "hr:user:view", // Let's assume a new, more generic permission
+		Country: "GLOBAL",
+	}), func(c *fiber.Ctx) error {
+		// The 'requirePermission' middleware already parsed the user and stored it.
+		// We can retrieve it from the context.
+		user := c.Locals("user").(*User)
+
+		// Return general, non-sensitive user data.
+		return c.JSON(fiber.Map{
+			"username":          user.ID,
+			"allowed_countries": user.AllowedCountries,
+		})
+	})
+
 	// User-protected payroll endpoint
-	app.Get("/user/payroll/view", requirePermission(Requirement{
+	app.Get("/user/payroll", requirePermission(Requirement{
 		Path:    "hr:payroll:view",
 		Country: "TH",
 	}), func(c *fiber.Ctx) error {

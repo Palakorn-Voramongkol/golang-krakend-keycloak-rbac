@@ -4,15 +4,15 @@
   "port": 8080,
   "endpoints": [
     {
-      "endpoint": "/login",                     
+      "endpoint": "/login",
       "method": "POST",
-      "input_headers": ["Content-Type"],         
+      "input_headers": ["Content-Type"],
       "output_encoding": "json",
       "backend": [
         {
-          "host": ["http://keycloak:8080"],     
+          "host": ["http://keycloak:8080"],
           "url_pattern": "/realms/demo-realm/protocol/openid-connect/token",
-          "encoding": "form"                     
+          "encoding": "form"
         }
       ]
     },
@@ -35,7 +35,7 @@
       "backend": [
         {
           "host": ["http://app:3000"],
-          "url_pattern": "/profile",
+          "url_pattern": "/user/profile",
           "encoding": "no_op"
         }
       ],
@@ -59,10 +59,11 @@
       "endpoint": "/user",
       "method": "GET",
       "input_headers": ["Authorization"],
+      "output_encoding": "json",
       "backend": [
         {
           "host": ["http://app:3000"],
-          "url_pattern": "/user/payroll/view",
+          "url_pattern": "/user",
           "encoding": "no_op"
         }
       ],
@@ -77,7 +78,7 @@
           "audience": ["fiber-app"],
           "issuer": "http://keycloak:8080/realms/demo-realm",
           "roles_key": "roles",
-          "roles": ["user"],
+          "roles": ["user", "admin"],
           "propagate_token": true
         }
       }
@@ -105,6 +106,34 @@
           "issuer": "http://keycloak:8080/realms/demo-realm",
           "roles_key": "roles",
           "roles": ["admin"],
+          "propagate_token": true
+        }
+      }
+    },
+    {
+      "endpoint": "/payroll",
+      "method": "GET",
+      "input_headers": ["Authorization"],
+      "output_encoding": "json",
+      "backend": [
+        {
+          "host": ["http://app:3000"],
+          "url_pattern": "/user/payroll",
+          "encoding": "no_op"
+        }
+      ],
+      "extra_config": {
+        "github.com/devopsfaith/krakend/proxy": {
+          "headers_to_pass": ["Authorization"]
+        },
+        "github.com/devopsfaith/krakend-jose/validator": {
+          "alg": "RS256",
+          "jwk_url": "http://keycloak:8080/realms/demo-realm/protocol/openid-connect/certs",
+          "disable_jwk_security": true,
+          "audience": ["fiber-app"],
+          "issuer": "http://keycloak:8080/realms/demo-realm",
+          "roles_key": "roles",
+          "roles": ["user"],
           "propagate_token": true
         }
       }
